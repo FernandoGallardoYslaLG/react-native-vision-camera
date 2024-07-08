@@ -5,32 +5,47 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.AudioManager
 import android.util.Log
-import android.view.Surface
+import androidx.exifinterface.media.ExifInterface
 import com.mrousavy.camera.core.extensions.takePicture
 import com.mrousavy.camera.core.types.Flash
 import com.mrousavy.camera.core.types.Orientation
 import com.mrousavy.camera.core.utils.FileUtils
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
-fun rotateImageIfNeeded(photoFile: File, orientation: Int): File {
+fun rotateImageIfNeeded(photoFile: File): File {
   val bitmap = BitmapFactory.decodeFile(photoFile.path)
-  val matrix = Matrix()
-  val rotatedBitmap = when (orientation) {
-    Surface.ROTATION_90 -> {
-      matrix.postRotate(90f)
-      Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-    }
-    Surface.ROTATION_180 -> {
-      matrix.postRotate(180f)
-      Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-    }
-    Surface.ROTATION_270 -> {
-      matrix.postRotate(270f)
-      Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-    }
-    else -> bitmap
+  var exif: ExifInterface? = null
+  try {
+    exif = ExifInterface(photoFile)
+  } catch (e: IOException) {
+    e.printStackTrace()
   }
+
+  val orientation = exif?.getAttributeInt(
+    ExifInterface.TAG_ORIENTATION,
+    ExifInterface.ORIENTATION_NORMAL
+  )
+
+  val matrix = Matrix()
+  val degrees = when (orientation) {
+    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+    else -> 0f
+  }
+
+  matrix.postRotate(degrees)
+  val rotatedBitmap = Bitmap.createBitmap(
+    bitmap,
+    0,
+    0,
+    bitmap.width,
+    bitmap.height,
+    matrix,
+    true
+  )
 
   val rotatedFile = File(photoFile.parent, "rotated_${photoFile.name}")
   FileOutputStream(rotatedFile).use { out ->
@@ -63,9 +78,8 @@ suspend fun CameraSession.takePhoto(flash: Flash, enableShutterSound: Boolean): 
   )
 
   val size = FileUtils.getImageSize(photoFile.uri.path)
-  val rotation = photoOutput.targetRotation
 
-  val rotatedPhotoFile = rotateImageIfNeeded(File(photoFile.uri.path), rotation)
+  val rotatedPhotoFile = rotateImageIfNeeded(File(photoFile.uri.path))
 
   return Photo(rotatedPhotoFile.path, size.width, size.height, Orientation.PORTRAIT, isMirrored)
 }
