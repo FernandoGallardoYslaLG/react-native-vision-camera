@@ -13,6 +13,39 @@ import com.mrousavy.camera.core.utils.FileUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import android.content.ContentValues
+import android.content.Context
+import android.os.Environment
+import android.provider.MediaStore
+import android.net.Uri
+import android.os.Build
+import androidx.annotation.RequiresApi
+
+@RequiresApi(Build.VERSION_CODES.Q)
+private fun savePhotoToDownloads(context: Context, photoFile: File): Uri {
+  val contentResolver = context.contentResolver
+  val contentValues = ContentValues().apply {
+    put(MediaStore.MediaColumns.DISPLAY_NAME, photoFile.name)
+    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+  }
+
+  val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+    ?: throw IOException("Failed to create new MediaStore record.")
+
+  try {
+    contentResolver.openOutputStream(uri).use { outputStream ->
+      val inputStream = photoFile.inputStream()
+      inputStream.copyTo(outputStream!!)
+      inputStream.close()
+    }
+  } catch (e: IOException) {
+    contentResolver.delete(uri, null, null)
+    throw e
+  }
+
+  return uri
+}
 
 fun rotateImageIfNeeded(photoFile: File): File {
   val bitmap = BitmapFactory.decodeFile(photoFile.path)
@@ -54,6 +87,7 @@ fun rotateImageIfNeeded(photoFile: File): File {
   return rotatedFile
 }
 
+@RequiresApi(Build.VERSION_CODES.Q)
 suspend fun CameraSession.takePhoto(flash: Flash, enableShutterSound: Boolean): Photo {
   val camera = camera ?: throw CameraNotReadyError()
   val configuration = configuration ?: throw CameraNotReadyError()
@@ -80,6 +114,8 @@ suspend fun CameraSession.takePhoto(flash: Flash, enableShutterSound: Boolean): 
   val size = FileUtils.getImageSize(photoFile.uri.path)
 
   val rotatedPhotoFile = rotateImageIfNeeded(File(photoFile.uri.path))
+
+  val savedPhotoUri = savePhotoToDownloads(context, rotatedPhotoFile)
 
   return Photo(rotatedPhotoFile.path, size.width, size.height, Orientation.PORTRAIT, isMirrored)
 }
