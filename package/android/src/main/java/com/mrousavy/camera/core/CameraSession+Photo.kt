@@ -15,13 +15,33 @@ import java.io.FileOutputStream
 import java.io.IOException
 import android.content.ContentValues
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Environment
 import android.provider.MediaStore
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.mrousavy.camera.core.extensions.id
 
 @RequiresApi(Build.VERSION_CODES.Q)
+
+fun getDepthVariance(cameraId: String, cameraManager: CameraManager): Double? {
+  try {
+    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+    val capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+
+    return if (capabilities != null && capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT)) {
+      0.00
+    } else {
+      null
+    }
+  } catch (e: Exception) {
+    println("DepthCheckError-getDepthVariance-CameraSessionPhoto: ${e.message}")
+    return null
+  }
+}
+
 private fun savePhotoToDownloads(context: Context, photoFile: File): Uri {
   val contentResolver = context.contentResolver
   val contentValues = ContentValues().apply {
@@ -90,6 +110,7 @@ fun rotateImageIfNeeded(photoFile: File): File {
 @RequiresApi(Build.VERSION_CODES.Q)
 suspend fun CameraSession.takePhoto(flash: Flash, enableShutterSound: Boolean): Photo {
   val camera = camera ?: throw CameraNotReadyError()
+  val cameraId = camera.cameraInfo.id ?: "0"
   val configuration = configuration ?: throw CameraNotReadyError()
   val photoConfig = configuration.photo as? CameraConfiguration.Output.Enabled<CameraConfiguration.Photo> ?: throw PhotoNotEnabledError()
   val photoOutput = photoOutput ?: throw PhotoNotEnabledError()
@@ -117,7 +138,9 @@ suspend fun CameraSession.takePhoto(flash: Flash, enableShutterSound: Boolean): 
 
   val savedPhotoUri = savePhotoToDownloads(context, rotatedPhotoFile)
 
-  return Photo(rotatedPhotoFile.path, size.width, size.height, Orientation.PORTRAIT, isMirrored)
+  val depthVariance = getDepthVariance(cameraId,camera2)
+
+  return Photo(rotatedPhotoFile.path, size.width, size.height, Orientation.PORTRAIT, isMirrored, depthVariance)
 }
 
 private fun CameraSession.getEnableShutterSoundActual(enable: Boolean): Boolean {
